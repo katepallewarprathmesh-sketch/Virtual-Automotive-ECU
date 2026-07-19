@@ -10,6 +10,11 @@
 #include "CanSocket.h"
 #include "HsmClient.h"
 #include "TaskScheduler.h"
+#include "DidManager.h"
+#include "DtcManager.h"
+#include "SecurityManager.h"
+#include "SessionManager.h"
+#include "UdsDispatcher.h"
 #include "UdsProtocol.h"
 
 using namespace ecu;
@@ -36,6 +41,11 @@ int main() {
     std::map<uint32_t, uint8_t> lastSequence;
     std::mutex sequenceMutex;
     std::atomic<bool> running(true);
+    uds::SessionManager sessionManager;
+    uds::SecurityManager securityManager;
+    uds::DidManager didManager;
+    uds::DtcManager dtcManager;
+    uds::UdsDispatcher dispatcher(sessionManager, securityManager, didManager, dtcManager);
 
     auto processFrame = [&](const CanFrame& frame) {
         if (frame.id == 0x100) {
@@ -70,19 +80,19 @@ int main() {
 
         uds::UdsMessage message;
         if (uds::parseUdsMessage(frame, message)) {
-            if (message.service == uds::kReadDataByIdentifier && message.payload.size() >= 2) {
-                uint16_t identifier = static_cast<uint16_t>(message.payload[0]) << 8 |
-                                      static_cast<uint16_t>(message.payload[1]);
-                if (identifier == uds::kDataIdentifierVehicleSpeed) {
-                    std::vector<uint8_t> responsePayload = {0xF1, 0x90, 0x09, 0xD0};
-                    CanFrame responseFrame;
-                    if (uds::encodeResponse(uds::kReadDataByIdentifierResponse, responsePayload, responseFrame, 0x7E8)) {
-                        socket.send(responseFrame);
-                        std::cout << "Gateway responded to UDS ReadDataByIdentifier." << std::endl;
-                    }
+            uds::UdsResponse response;
+            if (dispatcher.dispatch(message, response)) {
+                CanFrame responseFrame;
+                if (uds::encodeResponse(response.service, response.payload, responseFrame, 0x7E8)) {
+                    socket.send(responseFrame);
+                    std::cout << "Gateway responded to UDS service 0x" << std::hex << static_cast<int>(message.service) << std::dec << std::endl;
                 }
-            } else if (message.service == uds::kReadDataByIdentifierResponse) {
-                std::cout << "Gateway received UDS response." << std::endl;
+            } else if (response.isNegative) {
+                CanFrame responseFrame;
+                if (uds::encodeResponse(uds::kNegativeResponse, response.payload, responseFrame, 0x7E8)) {
+                    socket.send(responseFrame);
+                    std::cout << "Gateway sent negative response NRC=0x" << std::hex << static_cast<int>(response.nrc) << std::dec << std::endl;
+                }
             }
         }
     };
