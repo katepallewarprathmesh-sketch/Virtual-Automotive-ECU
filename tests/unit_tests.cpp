@@ -83,6 +83,27 @@ int main() {
     assertTrue(didResponse.service == ecu::uds::kReadDataByIdentifier + 0x40, "DID positive response service mismatch");
     assertTrue(didResponse.payload.size() >= 4, "DID response payload too short");
 
+    ecu::uds::UdsMessage resetRequest;
+    resetRequest.service = ecu::uds::kEcuReset;
+    resetRequest.payload = {0x01};
+    ecu::uds::UdsResponse resetResponse;
+    assertTrue(dispatcher.dispatch(resetRequest, resetResponse), "ECU reset dispatch failed");
+    assertTrue(resetResponse.service == ecu::uds::kEcuReset + 0x40, "ECU reset positive response service mismatch");
+
+    ecu::uds::UdsMessage dtcRequest;
+    dtcRequest.service = ecu::uds::kReadDtcInformation;
+    dtcRequest.payload = {};
+    ecu::uds::UdsResponse dtcResponse;
+    assertTrue(dispatcher.dispatch(dtcRequest, dtcResponse), "DTC read dispatch failed");
+    assertTrue(dtcResponse.service == ecu::uds::kReadDtcInformation + 0x40, "DTC read positive response service mismatch");
+
+    ecu::uds::UdsMessage radarRequest;
+    radarRequest.service = ecu::uds::kReadDataByIdentifier;
+    radarRequest.payload = {static_cast<uint8_t>(ecu::uds::kDataIdentifierRadarDistance >> 8), static_cast<uint8_t>(ecu::uds::kDataIdentifierRadarDistance & 0xFF)};
+    ecu::uds::UdsResponse radarResponse;
+    assertTrue(dispatcher.dispatch(radarRequest, radarResponse), "Radar distance DID dispatch failed");
+    assertTrue(radarResponse.service == ecu::uds::kReadDataByIdentifier + 0x40, "Radar DID positive response service mismatch");
+
     ecu::uds::UdsMessage invalidRequest;
     invalidRequest.service = 0xEE;
     invalidRequest.payload = {};

@@ -35,13 +35,23 @@ bool UdsDispatcher::dispatch(const UdsMessage& request, UdsResponse& response) c
 
     switch (reqSid) {
     case kSessionControl: {
-        if (request.payload.empty()) {
+        if (request.payload.size() != 1) {
             return makeNegative(kNrcInvalidFormat, reqSid);
         }
-        if (!sessionManager_.setSession(request.payload[0])) {
+        const uint8_t subFunction = request.payload[0];
+        if (!sessionManager_.setSession(subFunction)) {
             return makeNegative(kNrcRequestOutOfRange, reqSid);
         }
-        return makePositive(kSessionControl, {request.payload[0]});
+        return makePositive(kSessionControl, {subFunction});
+    }
+    case kEcuReset: {
+        if (request.payload.size() != 1) {
+            return makeNegative(kNrcInvalidFormat, reqSid);
+        }
+        if (request.payload[0] != 0x01) {
+            return makeNegative(kNrcRequestOutOfRange, reqSid);
+        }
+        return makePositive(kEcuReset, {0x01});
     }
     case kReadDataByIdentifier: {
         if (request.payload.size() != 2) {
@@ -54,21 +64,26 @@ bool UdsDispatcher::dispatch(const UdsMessage& request, UdsResponse& response) c
         }
         std::vector<uint8_t> payload = {static_cast<uint8_t>(did >> 8), static_cast<uint8_t>(did & 0xFF)};
         payload.insert(payload.end(), value.begin(), value.end());
+        if (payload.size() > 7) {
+            payload.resize(7);
+        }
         return makePositive(kReadDataByIdentifier, payload);
     }
     case kSecurityAccess: {
         if (request.payload.empty()) {
             return makeNegative(kNrcInvalidFormat, reqSid);
         }
+        const uint8_t subFunction = request.payload[0];
         std::vector<uint8_t> payload;
-        if (request.payload[0] == 0x01) {
+        if (subFunction == 0x01) {
             if (!securityManager_.handleSecurityAccess(0x01, payload)) {
                 return makeNegative(kNrcSecurityDenied, reqSid);
             }
             return makePositive(kSecurityAccess, payload);
         }
-        if (request.payload[0] == 0x02) {
-            if (!securityManager_.validateKey(0x02, request.payload.size() > 1 ? std::vector<uint8_t>(request.payload.begin() + 1, request.payload.end()) : std::vector<uint8_t>{})) {
+        if (subFunction == 0x02) {
+            std::vector<uint8_t> key = request.payload.size() > 1 ? std::vector<uint8_t>(request.payload.begin() + 1, request.payload.end()) : std::vector<uint8_t>{};
+            if (!securityManager_.validateKey(0x02, key)) {
                 return makeNegative(kNrcSecurityDenied, reqSid);
             }
             payload = {0x00};
@@ -77,23 +92,30 @@ bool UdsDispatcher::dispatch(const UdsMessage& request, UdsResponse& response) c
         return makeNegative(kNrcRequestOutOfRange, reqSid);
     }
     case kReadDtcInformation: {
+        if (!request.payload.empty()) {
+            return makeNegative(kNrcInvalidFormat, reqSid);
+        }
         auto entries = dtcManager_.listDtc();
         std::vector<uint8_t> payload;
-        payload.push_back(static_cast<uint8_t>(entries.size()));
-        for (const auto& entry : entries) {
-            payload.push_back(static_cast<uint8_t>(entry.code.size()));
-            for (unsigned char c : entry.code) {
+        if (entries.empty()) {
+            payload = {0x00};
+        } else {
+            const auto& first = entries.front();
+            payload.push_back(static_cast<uint8_t>(entries.size()));
+            payload.push_back(static_cast<uint8_t>(first.code.size()));
+            for (char c : first.code) {
                 payload.push_back(static_cast<uint8_t>(c));
             }
-            payload.push_back(entry.status);
+            payload.push_back(first.status);
+            payload.push_back(static_cast<uint8_t>(first.timestamp & 0xFF));
+            if (payload.size() > 7) {
+                payload.resize(7);
+            }
         }
         return makePositive(kReadDtcInformation, payload);
     }
     case kTesterPresent: {
         return makePositive(kTesterPresent, {0x00});
-    }
-    case kEcuReset: {
-        return makeNegative(kNrcServiceNotSupported, reqSid);
     }
     default:
         return makeNegative(kNrcServiceNotSupported, reqSid);

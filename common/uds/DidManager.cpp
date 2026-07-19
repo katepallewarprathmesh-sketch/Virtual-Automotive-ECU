@@ -5,6 +5,7 @@ namespace uds {
 
 DidManager::DidManager() {
     setDid(0xF190, {0x09, 0xD0});
+    setDid(0xF220, {0x00, 0x14});
 }
 
 bool DidManager::readDid(uint16_t did, std::vector<uint8_t>& value) const {

@@ -22,6 +22,7 @@ static constexpr uint8_t kSessionExtended = 0x03;
 static constexpr uint8_t kReadDataByIdentifierResponse = 0x62;
 static constexpr uint8_t kNegativeResponse = 0x7F;
 static constexpr uint16_t kDataIdentifierVehicleSpeed = 0xF190;
+static constexpr uint16_t kDataIdentifierRadarDistance = 0xF220;
 
 static constexpr uint8_t kNrcServiceNotSupported = 0x11;
 static constexpr uint8_t kNrcInvalidFormat = 0x13;
