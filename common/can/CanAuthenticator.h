@@ -11,6 +11,7 @@ struct AuthenticatedCanMessage {
     uint8_t messageType;
     uint8_t data[4];
     uint16_t mac;
+    uint8_t crc;
 };
 
 class CanAuthenticator {
@@ -26,6 +27,8 @@ public:
                                         AuthenticatedCanMessage& message);
 
     static std::vector<uint8_t> rawAuthData(const AuthenticatedCanMessage& message);
+    static uint8_t computeCrc(const std::vector<uint8_t>& payload);
+    static bool validateFrameIntegrity(const CanFrame& frame, const AuthenticatedCanMessage& message);
 };
 
 } // namespace ecu

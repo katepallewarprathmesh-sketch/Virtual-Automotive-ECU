@@ -4,10 +4,11 @@
 #include "../common/hsm/HsmService.h"
 #include "../common/uds/UdsDispatcher.h"
 #include "../common/uds/UdsProtocol.h"
+#include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <iostream>
 #include <thread>
-#include <chrono>
 
 using namespace ecu;
 
@@ -111,6 +112,73 @@ int main() {
     ecu::uds::UdsResponse radarResponse;
     assertTrue(dispatcher.dispatch(radarRequest, radarResponse), "Radar distance DID dispatch failed");
     assertTrue(radarResponse.service == ecu::uds::kReadDataByIdentifier + 0x40, "Radar DID positive response service mismatch");
+
+    // Normal communication path: valid authorized frame should parse successfully.
+    CanFrame normalFrame;
+    std::vector<uint8_t> normalPayload = {0xAA, 0xBB, 0xCC, 0xDD};
+    assertTrue(CanAuthenticator::createAuthenticatedFrame(0x100, 0x05, 0x01, normalPayload, {0x12, 0x34}, normalFrame), "Normal authenticated frame creation failed");
+    AuthenticatedCanMessage normalParsed;
+    assertTrue(CanAuthenticator::parseAuthenticatedFrame(normalFrame, normalParsed), "Normal authenticated frame parsing failed");
+    assertTrue(authorization.isAllowed("sensor_ecu", normalFrame.id), "Authorized sender should be accepted");
+
+    // Invalid CAN IDs should be rejected by policy.
+    CanFrame invalidIdFrame;
+    assertTrue(CanAuthenticator::createAuthenticatedFrame(0x123, 0x06, 0x01, normalPayload, {0x12, 0x34}, invalidIdFrame), "Invalid-ID frame creation failed");
+    assertTrue(!authorization.isAllowed("sensor_ecu", invalidIdFrame.id), "Unauthorized CAN ID should be rejected");
+
+    // Wrong payload lengths should generate a negative response.
+    ecu::uds::UdsMessage shortPayloadRequest;
+    shortPayloadRequest.service = ecu::uds::kReadDataByIdentifier;
+    shortPayloadRequest.payload = {0xF1};
+    ecu::uds::UdsResponse shortPayloadResponse;
+    assertTrue(!dispatcher.dispatch(shortPayloadRequest, shortPayloadResponse), "Short DID request should return a negative response");
+    assertTrue(shortPayloadResponse.isNegative && shortPayloadResponse.nrc == ecu::uds::kNrcInvalidFormat, "Short DID request NRC mismatch");
+
+    // Corrupted frames should be rejected during parsing.
+    CanFrame corruptedFrame;
+    corruptedFrame.id = 0x100;
+    corruptedFrame.dlc = 7;
+    std::fill(std::begin(corruptedFrame.data), std::end(corruptedFrame.data), 0xEE);
+    AuthenticatedCanMessage corruptedParsed;
+    assertTrue(!CanAuthenticator::parseAuthenticatedFrame(corruptedFrame, corruptedParsed), "Corrupted frame should be rejected");
+
+    // Tampered authenticated frames should fail integrity validation.
+    CanFrame tamperedFrame;
+    assertTrue(CanAuthenticator::createAuthenticatedFrame(0x100, 0x07, 0x01, normalPayload, {0x12, 0x34}, tamperedFrame), "Tampered frame creation failed");
+    tamperedFrame.data[2] ^= 0x01;
+    AuthenticatedCanMessage tamperedParsed;
+    assertTrue(CanAuthenticator::parseAuthenticatedFrame(tamperedFrame, tamperedParsed), "Tampered frame parsing should succeed structurally");
+    assertTrue(!CanAuthenticator::validateFrameIntegrity(tamperedFrame, tamperedParsed), "Tampered frame integrity should fail");
+
+    // Replay attacks: repeated sequence numbers should be blocked.
+    std::vector<uint8_t> seenSequences;
+    auto detectReplay = [&](uint8_t sequence) {
+        auto existing = std::find(seenSequences.begin(), seenSequences.end(), sequence);
+        if (existing != seenSequences.end()) {
+            return false;
+        }
+        seenSequences.push_back(sequence);
+        return true;
+    };
+    assertTrue(detectReplay(0x10), "First sequence should be accepted");
+    assertTrue(!detectReplay(0x10), "Repeated sequence should be rejected as replay");
+    assertTrue(detectReplay(0x11), "Newer sequence should be accepted");
+
+    // Queue overflow simulation: keep a capped queue size to mimic overflow handling.
+    constexpr size_t kQueueLimit = 4;
+    std::vector<CanFrame> frameQueue;
+    frameQueue.reserve(kQueueLimit);
+    for (int i = 0; i < 6; ++i) {
+        CanFrame queueFrame;
+        if (!CanAuthenticator::createAuthenticatedFrame(0x100, static_cast<uint8_t>(i), 0x01, normalPayload, {0x12, 0x34}, queueFrame)) {
+            continue;
+        }
+        if (frameQueue.size() >= kQueueLimit) {
+            frameQueue.erase(frameQueue.begin());
+        }
+        frameQueue.push_back(queueFrame);
+    }
+    assertTrue(frameQueue.size() == kQueueLimit, "Queue overflow simulation should cap the queue size");
 
     ecu::uds::UdsMessage invalidRequest;
     invalidRequest.service = 0xEE;

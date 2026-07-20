@@ -64,6 +64,10 @@ int main() {
                 std::cerr << "Gateway: invalid authenticated frame" << std::endl;
                 return;
             }
+            if (!CanAuthenticator::validateFrameIntegrity(frame, authMessage)) {
+                std::cerr << "Gateway: integrity check failed for frame id=0x" << std::hex << frame.id << std::dec << std::endl;
+                return;
+            }
             std::vector<uint8_t> raw = CanAuthenticator::rawAuthData(authMessage);
             bool success = false;
             std::vector<uint8_t> expectedMac = hsmClient.computeMac("mac_key", raw, success);
