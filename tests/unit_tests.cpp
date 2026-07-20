@@ -1,5 +1,7 @@
 #include "../common/can/CanAuthenticator.h"
 #include "../common/can/CanAuthorization.h"
+#include "../common/can/CanArbitrationSimulator.h"
+#include "../common/can/CanInterruptSimulator.h"
 #include "../common/hsm/HsmClient.h"
 #include "../common/hsm/HsmService.h"
 #include "../common/uds/UdsDispatcher.h"
@@ -60,6 +62,25 @@ int main() {
     authorization.addAllowedCanId("sensor_ecu", 0x7DF);
     assertTrue(authorization.isAllowed("sensor_ecu", 0x100), "Authorization allowed CAN ID check failed");
     assertTrue(!authorization.isAllowed("sensor_ecu", 0x123), "Authorization should reject unexpected CAN ID");
+
+    // Verify interrupt simulation.
+    ecu::CanInterruptSimulator interrupts;
+    assertTrue(interrupts.raiseInterrupt("timer_tick", 1), "Timer interrupt should be raised");
+    assertTrue(interrupts.raiseInterrupt("frame_ready", 5), "Frame-ready interrupt should be raised");
+    assertTrue(interrupts.pendingCount() == 2, "Interrupt queue should contain both events");
+    auto nextInterrupt = interrupts.dispatchHighestPriority();
+    assertTrue(nextInterrupt.has_value(), "High-priority interrupt should be available");
+    assertTrue(nextInterrupt->name == "frame_ready", "Highest-priority interrupt should be dispatched first");
+    assertTrue(interrupts.pendingCount() == 1, "One interrupt should remain after dispatch");
+
+    // Verify CAN arbitration simulation.
+    ecu::CanArbitrationSimulator arbitration;
+    arbitration.enqueueFrame(0x200, {0xAA, 0xBB});
+    arbitration.enqueueFrame(0x100, {0x01, 0x02});
+    arbitration.enqueueFrame(0x180, {0x33, 0x44});
+    auto winner = arbitration.arbitrateNext();
+    assertTrue(winner.has_value(), "A winner should be selected");
+    assertTrue(winner->id == 0x100, "Lowest CAN ID should win arbitration");
 
     // Verify new UDS dispatcher behaviors.
     ecu::uds::SessionManager sessionManager;
