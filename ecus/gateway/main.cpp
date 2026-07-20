@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 #include "CanAuthenticator.h"
+#include "CanAuthorization.h"
 #include "CanSocket.h"
 #include "HsmClient.h"
 #include "TaskScheduler.h"
@@ -41,6 +42,10 @@ int main() {
     std::map<uint32_t, uint8_t> lastSequence;
     std::mutex sequenceMutex;
     std::atomic<bool> running(true);
+    ecu::CanAuthorization authorization;
+    authorization.addAllowedCanId("sensor_ecu", 0x100);
+    authorization.addAllowedCanId("sensor_ecu", 0x7DF);
+    authorization.addAllowedCanId("sensor_ecu", 0x7E8);
     uds::SessionManager sessionManager;
     uds::SecurityManager securityManager;
     uds::DidManager didManager;
@@ -48,6 +53,11 @@ int main() {
     uds::UdsDispatcher dispatcher(sessionManager, securityManager, didManager, dtcManager);
 
     auto processFrame = [&](const CanFrame& frame) {
+        if (!authorization.isAllowed("sensor_ecu", frame.id)) {
+            std::cerr << "Gateway: unauthorized sender/can-id combo id=0x" << std::hex << frame.id << std::dec << std::endl;
+            return;
+        }
+
         if (frame.id == 0x100) {
             AuthenticatedCanMessage authMessage;
             if (!CanAuthenticator::parseAuthenticatedFrame(frame, authMessage)) {

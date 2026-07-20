@@ -1,4 +1,5 @@
 #include "../common/can/CanAuthenticator.h"
+#include "../common/can/CanAuthorization.h"
 #include "../common/hsm/HsmClient.h"
 #include "../common/hsm/HsmService.h"
 #include "../common/uds/UdsDispatcher.h"
@@ -51,6 +52,13 @@ int main() {
     assertTrue(parsed.sequence == 1, "Authenticated frame sequence mismatch");
     assertTrue(parsed.messageType == 0x01, "Authenticated message type mismatch");
     assertTrue(std::equal(std::begin(parsed.data), std::end(parsed.data), payload.begin()), "Authenticated payload mismatch");
+
+    // Verify centralized CAN authorization policy.
+    ecu::CanAuthorization authorization;
+    authorization.addAllowedCanId("sensor_ecu", 0x100);
+    authorization.addAllowedCanId("sensor_ecu", 0x7DF);
+    assertTrue(authorization.isAllowed("sensor_ecu", 0x100), "Authorization allowed CAN ID check failed");
+    assertTrue(!authorization.isAllowed("sensor_ecu", 0x123), "Authorization should reject unexpected CAN ID");
 
     // Verify new UDS dispatcher behaviors.
     ecu::uds::SessionManager sessionManager;
