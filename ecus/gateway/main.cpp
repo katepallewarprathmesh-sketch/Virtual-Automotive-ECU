@@ -46,6 +46,9 @@ int main() {
     authorization.addAllowedCanId("sensor_ecu", 0x100);
     authorization.addAllowedCanId("sensor_ecu", 0x7DF);
     authorization.addAllowedCanId("sensor_ecu", 0x7E8);
+    authorization.addAllowedCanId("radar_sensor_ecu", 0x110);
+    authorization.addAllowedCanId("bms_ecu", 0x120);
+    authorization.addAllowedCanId("tpms_ecu", 0x130);
     uds::SessionManager sessionManager;
     uds::SecurityManager securityManager;
     uds::DidManager didManager;

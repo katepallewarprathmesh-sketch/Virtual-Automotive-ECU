@@ -60,7 +60,13 @@ int main() {
     ecu::CanAuthorization authorization;
     authorization.addAllowedCanId("sensor_ecu", 0x100);
     authorization.addAllowedCanId("sensor_ecu", 0x7DF);
+    authorization.addAllowedCanId("radar_sensor_ecu", 0x110);
+    authorization.addAllowedCanId("bms_ecu", 0x120);
+    authorization.addAllowedCanId("tpms_ecu", 0x130);
     assertTrue(authorization.isAllowed("sensor_ecu", 0x100), "Authorization allowed CAN ID check failed");
+    assertTrue(authorization.isAllowed("radar_sensor_ecu", 0x110), "Radar ECU authorization check failed");
+    assertTrue(authorization.isAllowed("bms_ecu", 0x120), "BMS ECU authorization check failed");
+    assertTrue(authorization.isAllowed("tpms_ecu", 0x130), "TPMS ECU authorization check failed");
     assertTrue(!authorization.isAllowed("sensor_ecu", 0x123), "Authorization should reject unexpected CAN ID");
 
     // Verify interrupt simulation.
